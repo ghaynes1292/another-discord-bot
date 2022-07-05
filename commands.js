@@ -4,8 +4,11 @@ const { Routes } = require('discord-api-types/v9');
 const { clientId, guildId, token } = require('./config.json');
 
 const commands = [
-	new SlashCommandBuilder().setName('series').setDescription('Search for a series!')
-	.addStringOption(option => option.setName('input').setDescription('Enter a string'))
+	new SlashCommandBuilder().setName('add').setDescription('Add a new series')
+	.addStringOption(option =>
+		option.setName('name')
+			.setDescription('Series name')
+			.setRequired(true))
 ]
 	.map(command => command.toJSON());
 

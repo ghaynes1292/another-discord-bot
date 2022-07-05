@@ -1,88 +1,89 @@
-// Require the necessary discord.js classes
-const { Client, Intents, MessageActionRow, MessageSelectMenu, MessageEmbed } = require('discord.js');
+const { Client, Intents } = require('discord.js');
+const { addSeries } = require('./discord');
 const { token, myId } = require('./config.json');
-const { seriesLookup, seriesToMessage, addSeries } = require('./sonarr');
 
 // Create a new client instance
 const client = new Client({
 	partials: ['MESSAGE', 'CHANNEL', 'REACTION'],
-	intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.DIRECT_MESSAGES, Intents.FLAGS.DIRECT_MESSAGE_REACTIONS]
+	intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES, Intents.FLAGS.GUILD_MESSAGE_REACTIONS, Intents.FLAGS.DIRECT_MESSAGES, Intents.FLAGS.DIRECT_MESSAGE_REACTIONS]
 });
 
-async function commandInteraction(interaction) {
-	const { commandName } = interaction;
+// only works when the process normally exits
+// on windows, ctrl-c will not trigger this handler (it is unnormal)
+// unless you listen on 'SIGINT'
+process.on("exit", async (code) => {
+	console.log("Process exit event with code: ", code);
+	await client.user.setStatus('invisible');
+	console.log('offline bot')
+});
 
-	if (commandName === 'series') {
-		const input = interaction.options.getString('input');
-		await interaction.deferReply();
-		const series = await seriesLookup(input);
-		const seriesTitles = series.map((show) => show.title)
-		const row = new MessageActionRow()
-			.addComponents(
-				new MessageSelectMenu()
-					.setCustomId('select')
-					.setPlaceholder('Show')
-					.addOptions(seriesTitles.map((title) => ({
-						label: title,
-						description: title,
-						value: title,
-					})))
-			);
-		await interaction.editReply({ content: 'Pong!', components: [row], fetchReply: true })
-	}
-}
+// catch ctrl-c, so that event 'exit' always works
+process.on("SIGINT", async (signal) => {
+	console.log(`Process ${process.pid} has been interrupted`);
+	await client.user.setStatus('invisible');
+	console.log('bot offline')
+	process.exit(0);
+});
 
-async function selectInteraction(interaction) {
-	console.log('select interaction', interaction.values)
-}
+// what about errors
+// try remove/comment this handler, 'exit' event still works
+process.on("uncaughtException", async (err) => {
+	console.log(`Uncaught Exception: ${err.message}`);
+	await client.user.setStatus('invisible');
+	console.log('offline bot')
+	process.exit(1);
+});
 
 client.once('ready', () => {
+	client.user.setPresence({ activities: [{ name: 'Bot stuff' }], status: 'online' });
 	console.log('Ready!');
 });
+
 
 client.on('interactionCreate', async interaction => {
 	console.log('interaction!!', interaction);
 	if (interaction.isCommand()) {
-		return commandInteraction(interaction)
-	}
-	if (interaction.isSelectMenu()) {
-		return selectInteraction(interaction)
+		if (interaction.user.id !== myId) {
+			console.log(`Pinged by: ${interaction.user.username}#${interaction.user.discriminator}, not responding`)
+			return;
+		}
+		if (interaction.commandName === 'add') {
+			interaction.reply(`Results for: ${interaction.options.getString('name')}`)
+
+			const addedSeries = await addSeries(interaction.options.getString('name'), interaction.channel)
+			console.log('added series', addedSeries)
+		}
 	}
 });
 
-let conversation = false;
 client.on('messageCreate', async message => {
 	console.log(`recieved a message from ${message.author.username}, ${message.content}`)
-	if (conversation) {
-		console.log('in a conversation tho!')
-		return;
-	}
 	if (message.author.id === client.user.id) {
 		console.log(`That was my message`)
-		return ;
+		return;
 	}
 	if (message.author.id !== myId) {
 		console.log(`Pinged by: ${message.author.username}#${message.author.discriminator}, not responding`)
-		return ;
+		return;
 	}
-	conversation = true;
-	const filter = (reaction) => {
-		return reaction.emoji.name === '👍';
-	};
-	const series = await seriesLookup(message.content);
-	const correct = await Promise.race(series.map(async (serie) => {
-		return new Promise(async (resolve, reject) => {
-			try {
-				const seriesMessage = await message.channel.send({ embeds: [seriesToMessage(serie)] });
-				await seriesMessage.react('👍');
-				await seriesMessage.awaitReactions({ filter, max: 2, time: 60000, errors: ['time'] })
-				resolve(serie)
-			} catch (e) {
-				reject(e)
-			}
-		})
-	}))
-	await addSeries(correct)
+	await addSeries(message.content, message.channel)
+	// conversation = true;
+	// const filter = (reaction) => {
+	// 	return reaction.emoji.name === '👍';
+	// };
+	// const series = await seriesLookup(message.content);
+	// const correct = await Promise.race(series.map(async (serie) => new Promise(async (resolve, reject) => {
+	// 	try {
+	// 		const seriesMessage = await message.channel.send({ embeds: [seriesToMessage(serie)] });
+	// 		seriesMessage.react('👍');
+	// 		await seriesMessage.awaitReactions({ filter, max: 2, time: 60000, errors: ['time'] })
+	// 		resolve(serie)
+	// 	} catch (e) {
+	// 		reject(e)
+	// 	}
+	// })))
+	// const addedSeries = await addSeries(correct);
+	// console.log('added series', addedSeries)
 })
 
 client.login(token);

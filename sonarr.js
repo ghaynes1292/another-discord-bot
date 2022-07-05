@@ -11,7 +11,7 @@ async function seriesLookup(key) {
     }
 }
 
-async function addSeries({ title, titleSlug, tvdbId, profileId, images, seasons, qualityProfileId }) {
+async function addSeriesToSonarr({ title, titleSlug, tvdbId, profileId, images, seasons, qualityProfileId }) {
     try {
         const body = {
             title,
@@ -53,7 +53,7 @@ function seriesToMessage(series) {
 
 module.exports = {
     seriesLookup,
-    addSeries,
+    addSeriesToSonarr,
     formatSeries,
     seriesToMessage,
 }
