@@ -1,6 +1,13 @@
+const { watch } = require('node:fs');
+const path = require('path')
+const express = require('express');
 const { Client, Intents } = require('discord.js');
 const { addSeries } = require('./discord');
-const { token, myId } = require('./config.json');
+const { token, botUserId, gavinUserId, gavinChannelId } = require('./config.json');
+const { channel } = require('node:diagnostics_channel');
+
+const app = express();
+const port = 3000;
 
 // Create a new client instance
 const client = new Client({
@@ -13,14 +20,14 @@ const client = new Client({
 // unless you listen on 'SIGINT'
 process.on("exit", async (code) => {
 	console.log("Process exit event with code: ", code);
-	await client.user.setStatus('invisible');
+	await client?.user?.setStatus('invisible');
 	console.log('offline bot')
 });
 
 // catch ctrl-c, so that event 'exit' always works
 process.on("SIGINT", async (signal) => {
 	console.log(`Process ${process.pid} has been interrupted`);
-	await client.user.setStatus('invisible');
+	await client?.user?.setStatus('invisible');
 	console.log('bot offline')
 	process.exit(0);
 });
@@ -29,13 +36,18 @@ process.on("SIGINT", async (signal) => {
 // try remove/comment this handler, 'exit' event still works
 process.on("uncaughtException", async (err) => {
 	console.log(`Uncaught Exception: ${err.message}`);
-	await client.user.setStatus('invisible');
+	await client?.user?.setStatus('invisible');
 	console.log('offline bot')
 	process.exit(1);
 });
 
+
+app.get('/', function(req, res) {
+  res.send('Hello World!')
+});
+
 client.once('ready', () => {
-	client.user.setPresence({ activities: [{ name: 'Bot stuff' }], status: 'online' });
+	client?.user?.setPresence({ activities: [{ name: 'Bot stuff' }], status: 'online' });
 	console.log('Ready!');
 });
 
@@ -57,16 +69,23 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.on('messageCreate', async message => {
-	console.log(`recieved a message from ${message.author.username}, ${message.content}`)
+	console.log(`recieved a message from ${message.author.username}, ${message.content}, channel:${message.channelId}`)
 	if (message.author.id === client.user.id) {
 		console.log(`That was my message`)
 		return;
 	}
-	if (message.author.id !== myId) {
-		console.log(`Pinged by: ${message.author.username}#${message.author.discriminator}, not responding`)
+	if (message.author.id !== gavinUserId) {
+		console.log(`Pinged by: ${message.author.username}#${message.author.discriminator}`)
+		message.channel.send(`Hey, ${message.author.username}#${message.author.discriminator}. I don't know you.`)
 		return;
 	}
-	await addSeries(message.content, message.channel)
+
+	if (message.content.match('Add')) {
+		const series = message.content.split(' ');
+		const wholeSeries = series.slice(1).join(' ')
+		console.log('Going to add series:', wholeSeries)
+		// await addSeries(message.content, message.channel)
+	}
 	// conversation = true;
 	// const filter = (reaction) => {
 	// 	return reaction.emoji.name === '👍';
@@ -86,4 +105,27 @@ client.on('messageCreate', async message => {
 	// console.log('added series', addedSeries)
 })
 
-client.login(token);
+app.listen(port, async function() {
+  console.log(`Example app listening on port ${port}!`)
+
+	const loggedIn = await client.login(token);
+	const dm = await client.channels.fetch(gavinChannelId);
+	console.log('dm loaded', dm)
+
+	const preferenceResponse = await fetch('http://localhost:8080/api/v2/app/preferences');
+	const preferences = await preferenceResponse.json();
+	const { temp_path, save_path } = preferences;
+
+	console.log('preferences', preferences)
+
+	const watchPath = path.relative('.', path.resolve(save_path))
+	console.log('path:', watchPath);
+	const fsWatcher = watch(watchPath);
+	fsWatcher.addListener('change', (eventType, fileName) => {
+		console.log('change:', eventType, fileName)
+		if (eventType === 'rename') {
+			dm.send(`New file added: ${fileName}`)
+		}
+	})
+	
+});
